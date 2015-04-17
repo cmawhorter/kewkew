@@ -73,7 +73,8 @@ Pass options as the second argument i.e. `new KewKew(workerFunction, options)`. 
     //    1. queue.push(a job that should run in an hour)
     //    2. queue still tries to process the job immediately
     //    3. worker will sleep 1000ms before re-queuing the job
-    // note: don't set this too high because the worker cannot process other jobs while it waits
+    // note: don't set this too high because the worker cannot process other 
+    //   jobs while it waits
   , delayEarlyJob: 1000
 
     // retry failed jobs (worker returns error) automatically 
