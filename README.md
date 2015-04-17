@@ -121,7 +121,7 @@ Pass options as the second argument i.e. `new KewKew(workerFunction, options)`. 
 ## Other job queues
 
   - https://github.com/OptimalBits/bull (This is what I've been using unhappily, but it gets the job done)
-  - https://github.com/Automattic/kue (Last time I used this it was buggy and abandoned, thought there seems to be new activity on the project)
+  - https://github.com/Automattic/kue (Last time I used this it was buggy and abandoned, though there seems to be new activity on the project)
   - https://github.com/threez/file-queue (Found this while looking for an existing project like this)
 
 ## Why redis isn't good for a job queue
