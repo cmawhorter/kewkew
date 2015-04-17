@@ -1,7 +1,7 @@
 'use strict';
 
 var path = require('path')
-  , fs = require('fs')
+  , fs = require('graceful-fs')
   , util = require('util');
 
 var async = require('async')

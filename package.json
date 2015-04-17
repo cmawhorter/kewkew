@@ -18,6 +18,7 @@
   "homepage": "https://github.com/cmawhorter/kewkew",
   "dependencies": {
     "async": "^0.9.0",
+    "graceful-fs": "^3.0.6",
     "mkdirp": "^0.5.0"
   }
 }
