@@ -113,6 +113,7 @@ Pass options as the second argument i.e. `new KewKew(workerFunction, options)`. 
 
 ## TODO
 
+  - A nicer shutdown
   - bull/kue compatible API to be a drop-in replacement
   - Some kind of distribution/clustering
   - Lazy loading of job data from disk (right now everything loaded into memory on init)
