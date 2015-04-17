@@ -26,10 +26,22 @@ function KewKew(worker, options) {
     , autoStart: true
     , concurrency: 4
     , reloadConcurrency: 16
-    , delayEarlyJob: 100
+    , delayEarlyJob: 1000
     , retryFailedJobs: false
+    , retryFailedJobDelay: 15000
+    , destroySuccessfulJobs: false
+    , destroyFailedJobs: false
+    , moveSuccessfulJobs: true
+    , moveFailedJobs: true
     , maxJobFailures: 3
+    , prettifyJSON: false
   };
+  if (true === options.destroySuccessfulJobs) { // disables these options
+    options.moveSuccessfulJobs = false;
+  }
+  if (true === options.destroyFailedJobs) { // disables these options
+    options.moveFailedJobs = false;
+  }
   helpers.applyOptions(this.options, options);
   this.options.directory = path.resolve(this.options.directory);
   this._init();
@@ -74,53 +86,123 @@ KewKew.prototype._reload = function(callback) {
   var _this = this;
   fs.readdir(this.options.directory, function(err, files) {
     if (err) return callback(err);
-    async.parallelLimit(files.map(function(f) {
+    async.parallelLimit(helpers.filterDotFiles(files).map(function(f) {
       var file = path.join(_this.options.directory, f);
       return async.apply(Job.fromDisk, file);
     }), _this.options.reloadConcurrency, function(err, jobs) {
       if (err) return callback(err);
       (jobs || []).map(_this._enqueue.bind(_this));
+      callback(null);
     });
   });
 };
 
 KewKew.prototype._worker = function(job, callback) {
+  // callback is special. first param is err, second param is job being
+  // processed.  if job is excluded no job related events are fired
   var _this = this;
   var timestamp = new Date().getTime();
+  // console.log('Entering Worker for Job %s', job.id);
   job.processing = true;
   if (job.options.scheduled <= timestamp) {
     job.attempts++;
-    try {
-      this.worker(job, callback);
-    }
-    catch (err) {
-      return callback(err);
-    }
+    // console.log('Processing...', job.id, job.attempts);
+    this._persist(job, function(err) {
+      if (err) return callback(err, job);
+      try {
+        _this.worker(job, function(err) {
+          callback(err, job);
+        });
+      }
+      catch (err) {
+        return callback(err, job);
+      }
+    });
   }
   else {
+    // console.log('Too Soon. Delaying...', job.id);
     setTimeout(function() {
       _this._enqueue(job);
+      callback(null, null);
     }, this.options.delayEarlyJob);
   }
 };
 
-KewKew.prototype._onJobComplete = function(err) {
+KewKew.prototype._persist = function(job, callback) {
+  var _this = this;
+  job.persist(function(err) {
+    if (err) {
+      _this.trigger('error', err);
+      callback(err);
+      return;
+    }
+    callback(null);
+  });
+};
+
+KewKew.prototype._destroy = function(job, callback) {
+  job.destroy(function(err) {
+    if (err) {
+      _this.trigger('job:error', err, job);
+      _this.trigger('error', err);
+      callback(err);
+      return
+    }
+    callback(null);
+  });
+};
+
+KewKew.prototype._onJobComplete = function(err, job) {
+  var _this = this;
   if (err) {
     this.trigger('job:error', err, job);
     this.trigger('error', err);
-    if (this.options.retryFailedJobs && job.attempts <= this.options.maxJobFailures) {
-      this.retry(job);
+    if (this.options.retryFailedJobs) {
+      if (this.options.maxJobFailures <= 0 || job.attempts < this.options.maxJobFailures) {
+        this.retry(job);
+      }
+      else {
+        this.trigger('job:fail', job);
+        if (this.options.moveFailedJobs) {
+          fs.rename(job.file, path.join(job.directory, '.failed-' + job.id), function(err) {
+            if (err) {
+              _this.trigger('error', err);
+            }
+          });
+        }
+        else if (this.options.destroyFailedJobs) {
+          this._destroy(job, function(err) {
+            if (!err) {
+              _this.trigger('job:destroy', job);
+            }
+          });
+        }
+      }
     }
   }
-  else {
+  else if (job) {
     this.trigger('job:complete', job);
+    if (this.options.moveSuccessfulJobs) {
+      fs.rename(job.file, path.join(job.directory, '.success-' + job.id), function(err) {
+        if (err) {
+          _this.trigger('error', err);
+        }
+      });
+    }
+    else if (this.options.destroySuccessfulJobs) {
+      this._destroy(job, function(err) {
+        if (!err) {
+          _this.trigger('job:destroy', job);
+        }
+      });
+    }
   }
 };
 
 KewKew.prototype._enqueue = function(job) {
+  var _this = this;
   job.processing = false;
-  job.options.scheduled = job.options.scheduled || new Date().getTime();
-  this._queue.push(job, job.options.scheduled, this._onJobComplete.bind(this));
+  this._queue.push(job, job.options.scheduled, _this._onJobComplete.bind(_this));
 };
 
 KewKew.prototype.pause = function() {
@@ -151,29 +233,50 @@ KewKew.prototype.push = function(data, options, callback) {
   var _this = this;
   if (typeof options === 'function') {
     callback = options;
-    options = {};
+    options = null;
   }
-  options = Object.create(options); // in case people reuse options object
+  options = Object.create(options || {}); // in case people reuse options object
+  options.prettifyJSON = this.options.prettifyJSON;
   options.scheduled = options.scheduled || new Date().getTime();
   if (options.delay) {
     options.scheduled += options.delay;
     delete options.delay;
   }
   var job = new Job(data, options, this.options.directory);
-  job.persist(function(err) {
-    if (err) return callback(err);
-    _this._enqueue(job);
-    _this.trigger('job:queue', job);
-    callback(null, job);
+  this._persist(job, function(err) {
+    if (err) {
+      callback && callback(err);
+    }
+    else {
+      _this._enqueue(job);
+      _this.trigger('job:queue', job);
+      callback && callback(null, job);
+    }
   });
   return this;
 };
 
-KewKew.prototype.retry = function(job) {
+KewKew.prototype.count = function() {
+  return this._queue.length();
+};
+
+KewKew.prototype.retry = function(job, callback) {
+  var _this = this;
   if (job.processing) {
-    this._enqueue(job);
-    this.trigger('job:retry', job);
-    this.trigger('job:queue', job);
+    job.options.scheduled += this.options.retryFailedJobDelay;
+    this._persist(job, function(err) {
+      if (err) {
+        _this.trigger('job:error', err, job);
+        _this.trigger('error', err);
+        callback && callback(err);
+      }
+      else {
+        _this._enqueue(job);
+        _this.trigger('job:retry', job);
+        _this.trigger('job:queue', job);
+        callback && callback(null);
+      }
+    });
   }
   else {
     throw new Error('Cannot retry job because it is unprocessed');
