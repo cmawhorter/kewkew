@@ -235,13 +235,9 @@ KewKew.prototype.push = function(data, options, callback) {
     callback = options;
     options = null;
   }
-  options = Object.create(options || {}); // in case people reuse options object
+  options = options || {};
   options.prettifyJSON = this.options.prettifyJSON;
   options.scheduled = options.scheduled || new Date().getTime();
-  if (options.delay) {
-    options.scheduled += options.delay;
-    delete options.delay;
-  }
   var job = new Job(data, options, this.options.directory);
   this._persist(job, function(err) {
     if (err) {
