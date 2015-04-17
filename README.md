@@ -66,7 +66,8 @@ Pass options as the second argument i.e. `new KewKew(workerFunction, options)`. 
   , reloadConcurrency: 16
 
     // kewkew continuously attempts to process jobs even if they've been 
-    // scheduled in the future if a job is processed and found to be scheduled 
+    // scheduled in the future. 
+    // if a job is processed and found to be scheduled 
     // in the future, this is the delay imposed before attempting 
     // to process again
     // e.g. 
