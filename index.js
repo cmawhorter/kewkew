@@ -101,6 +101,13 @@ KewKew.prototype._worker = function(job, callback) {
   // callback is special. first param is err, second param is job being
   // processed.  if job is excluded no job related events are fired
   var _this = this;
+  var once = function() {
+    var _callback = callback;
+    callback = function(){
+      _this.trigger('error', new Error('worker callback called twice'));
+    };
+    _callback.apply(this, arguments);
+  };
   var timestamp = new Date().getTime();
   // console.log('Entering Worker for Job %s', job.id);
   job.processing = true;
@@ -108,14 +115,14 @@ KewKew.prototype._worker = function(job, callback) {
     job.attempts++;
     // console.log('Processing...', job.id, job.attempts);
     this._persist(job, function(err) {
-      if (err) return callback(err, job);
+      if (err) return once(err, job);
       try {
         _this.worker(job, function(err) {
-          callback(err, job);
+          once(err, job);
         });
       }
       catch (err) {
-        return callback(err, job);
+        return once(err, job);
       }
     });
   }
@@ -123,7 +130,7 @@ KewKew.prototype._worker = function(job, callback) {
     // console.log('Too Soon. Delaying...', job.id);
     setTimeout(function() {
       _this._enqueue(job);
-      callback(null, null);
+      once(null, null);
     }, this.options.delayEarlyJob);
   }
 };
@@ -221,11 +228,31 @@ KewKew.prototype.resume = function() {
   return this;
 };
 
+KewKew.prototype.shutdown = function(callback) {
+  var _this = this;
+  this._queue.pause();
+  async.whilst(function() {
+    return 0 !== _this._queue.running();
+  }, function(cb) {
+    setTimeout(function() {
+      cb();
+    }, 250);
+  }, function(err) {
+    callback(err);
+  });
+};
+
 KewKew.prototype.destroy = function() {
-  this._destroyed = true;
-  this._queue.kill();
-  this.trigger('end');
-  this._queue = null;
+  var _this = this;
+  _this.shutdown(function(err) {
+    if (err) {
+      _this.trigger('error', err);
+    }
+    _this._destroyed = true;
+    _this._queue.kill();
+    _this._queue = null;
+    _this.trigger('end');
+  });
   return this;
 };
 
